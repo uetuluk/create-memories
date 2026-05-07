@@ -1,5 +1,8 @@
 {$BASE_URL} {
     encode zstd gzip
+    tls uet200@nyu.edu {
+        dns cloudflare {$CF_API_TOKEN}
+    }
     request_body {
         max_size 1MB
     }

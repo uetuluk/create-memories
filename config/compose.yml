@@ -13,16 +13,16 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-app}']
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-app}" ]
       interval: 5s
       timeout: 3s
       retries: 10
 
   app-migrate:
     image: ghcr.io/${IMAGE_OWNER}/create-memories:latest
-    restart: 'no'
+    restart: "no"
     env_file: .env
-    command: ['npx', 'prisma', 'migrate', 'deploy']
+    command: [ "npx", "prisma", "migrate", "deploy" ]
     depends_on:
       db:
         condition: service_healthy
@@ -36,7 +36,7 @@ services:
     environment:
       MEDIA_DIR: /data/media
       SURVEY_URL: ${SURVEY_URL:-}
-    command: ['node', 'server.js']
+    command: [ "node", "server.js" ]
     volumes:
       - media:/data/media
     depends_on:
@@ -54,7 +54,7 @@ services:
     env_file: .env
     environment:
       MEDIA_DIR: /data/media
-    command: ['node', 'dist-worker/worker/index.js']
+    command: [ "node", "dist-worker/worker/index.js" ]
     volumes:
       - media:/data/media
     depends_on:
@@ -67,9 +67,11 @@ services:
       - external
 
   caddy:
-    image: caddy:latest
+    image: uetuluk/caddy-cloudflare:latest
     restart: always
     env_file: .env
+    environment:
+      CF_API_TOKEN: ${CF_API_TOKEN}
     ports:
       - 80:80
       - 443:443
