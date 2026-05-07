@@ -70,28 +70,45 @@ enum JobStatus {
   BLOCKED
 }
 
+enum QilinStyle {
+  FIERCE
+  CUTE
+}
+
 model Job {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  prompt      String
-  rewritten   String?
-  mode        Mode
-  status      JobStatus @default(QUEUED)
-  filePath    String?
-  mimeType    String?
-  costUsd     Decimal?  @db.Decimal(6, 4)
-  errorCode   String?
-  errorMsg    String?
-  hidden      Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  startedAt   DateTime?
-  completedAt DateTime?
-  usage       UsageEvent[]
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Free-text "vibe" the student typed (optional). Was the full prompt
+  // pre-pivot; now it's an optional descriptor on top of style + location.
+  prompt        String
+  rewritten     String?
+  mode          Mode
+  status        JobStatus @default(QUEUED)
+  // Qilin transform inputs.
+  style         QilinStyle? // null = legacy free-prompt jobs
+  location      String? // ref key from src/lib/refs.ts; null means random
+  selfiePath    String? // local path; deleted on completion
+  // Generated artifact.
+  filePath      String?
+  mimeType      String?
+  // For VIDEO jobs spawned from an IMAGE job (image-to-video chain).
+  parentJobId   String?
+  parent        Job?      @relation("JobChildren", fields: [parentJobId], references: [id], onDelete: SetNull)
+  children      Job[]     @relation("JobChildren")
+  costUsd       Decimal?  @db.Decimal(6, 4)
+  errorCode     String?
+  errorMsg      String?
+  hidden        Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+  usage         UsageEvent[]
 
   @@index([status, createdAt])
   @@index([completedAt(sort: Desc)])
   @@index([userId, status])
+  @@index([parentJobId])
 }
 
 model AppState {

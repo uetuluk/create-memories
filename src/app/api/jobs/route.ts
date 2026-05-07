@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isEmailAllowed } from "@/lib/env";
 import { getAppMode, getQueuePosition } from "@/lib/queue";
+import { isLocationKey, isStyleKey, type LocationKey, type StyleKey } from "@/lib/refs";
+import { savePortrait, deletePortrait } from "@/lib/upload";
 
 export const dynamic = "force-dynamic";
 
-const MAX_PROMPT = 500;
+const MAX_VIBE = 200;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -14,11 +17,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => null);
-  const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-  if (!prompt) return NextResponse.json({ error: "empty_prompt" }, { status: 400 });
-  if (prompt.length > MAX_PROMPT)
-    return NextResponse.json({ error: "prompt_too_long" }, { status: 400 });
+  const ct = req.headers.get("content-type") ?? "";
+  if (!ct.startsWith("multipart/form-data")) {
+    return NextResponse.json({ error: "expected_multipart" }, { status: 400 });
+  }
+  const form = await req.formData();
+
+  const styleRaw = form.get("style");
+  if (!isStyleKey(styleRaw)) {
+    return NextResponse.json({ error: "missing_style" }, { status: 400 });
+  }
+  const style: StyleKey = styleRaw;
+
+  const locationRaw = form.get("location");
+  let location: LocationKey | null = null;
+  if (typeof locationRaw === "string" && locationRaw && locationRaw !== "random") {
+    if (!isLocationKey(locationRaw)) {
+      return NextResponse.json({ error: "bad_location" }, { status: 400 });
+    }
+    location = locationRaw;
+  }
+
+  const vibeRaw = form.get("vibe");
+  const vibe = typeof vibeRaw === "string" ? vibeRaw.trim().slice(0, MAX_VIBE) : "";
+
+  const photo = form.get("photo");
+  const hasPhoto = photo instanceof File && photo.size > 0;
 
   const state = await getAppMode();
   if (state.mode === "OFF") {
@@ -36,8 +60,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Per-user cap across QUEUED + RUNNING + COMPLETED (failures and blocks
-  // don't count against the user — they didn't get a result).
   const used = await prisma.job.count({
     where: {
       userId: session.user.id,
@@ -51,16 +73,38 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const job = await prisma.job.create({
-    data: {
-      userId: session.user.id,
-      prompt,
-      mode: state.mode,
-    },
-    select: { id: true, mode: true, createdAt: true },
-  });
-  const position = await getQueuePosition(job.id);
-  return NextResponse.json({ id: job.id, mode: job.mode, position });
+  // Save the selfie first (needs an id we can reuse on the Job row).
+  const provisionalId = randomUUID();
+  let selfiePath: string | null = null;
+  if (hasPhoto) {
+    try {
+      const saved = await savePortrait(provisionalId, photo);
+      selfiePath = saved.filePath;
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "UPLOAD_FAILED";
+      return NextResponse.json({ error: code }, { status: 400 });
+    }
+  }
+
+  try {
+    const job = await prisma.job.create({
+      data: {
+        userId: session.user.id,
+        prompt: vibe,
+        mode: state.mode,
+        style,
+        location,
+        selfiePath,
+      },
+      select: { id: true, mode: true, createdAt: true },
+    });
+    const position = await getQueuePosition(job.id);
+    return NextResponse.json({ id: job.id, mode: job.mode, position });
+  } catch (e) {
+    // If DB insert fails, don't leave the upload orphaned.
+    await deletePortrait(selfiePath);
+    throw e;
+  }
 }
 
 export async function GET(req: NextRequest) {

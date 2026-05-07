@@ -37,14 +37,25 @@ export type GenerationResult = {
 const POLL_INTERVAL_MS = 10_000;
 const MAX_POLLS = 30; // 5 minutes ceiling
 
+export type ImageRef = { data: string; mimeType: string };
+
 export async function generateVideo(
   prompt: string,
   outPath: string,
+  opts: { imageRef?: ImageRef } = {},
 ): Promise<GenerationResult> {
   const client = ai();
   let op = await client.models.generateVideos({
     model: MODELS.video,
     prompt,
+    ...(opts.imageRef
+      ? {
+          image: {
+            imageBytes: opts.imageRef.data,
+            mimeType: opts.imageRef.mimeType,
+          },
+        }
+      : {}),
     config: {
       aspectRatio: VIDEO_ASPECT,
       durationSeconds: VIDEO_DURATION_SECONDS,
@@ -93,39 +104,67 @@ export async function generateVideo(
   };
 }
 
+export type ImageGenerationResult = GenerationResult & {
+  // The base64-encoded image we just generated, kept around so callers
+  // can chain it into image-to-video without re-reading from disk.
+  imageRef: ImageRef;
+  textCommentary?: string;
+  refusalReason?: string;
+};
+
 export async function generateImage(
   prompt: string,
   outPath: string,
-): Promise<GenerationResult> {
+  opts: { imageRefs?: ImageRef[] } = {},
+): Promise<ImageGenerationResult> {
   const client = ai();
+
+  const userParts: Array<{ text?: string; inlineData?: { data: string; mimeType: string } }> = [];
+  for (const ref of opts.imageRefs ?? []) {
+    userParts.push({ inlineData: { data: ref.data, mimeType: ref.mimeType } });
+  }
+  userParts.push({ text: `${prompt}\n\n[Render as a 16:9 landscape image.]` });
+
   const res = await client.models.generateContent({
     model: MODELS.image,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: `${prompt}\n\n[Render as a 16:9 landscape image.]` },
-        ],
-      },
-    ],
+    contents: [{ role: "user", parts: userParts }],
     config: {
       responseModalities: [Modality.IMAGE],
     },
   });
 
-  const parts = res.candidates?.[0]?.content?.parts ?? [];
+  const candidate = res.candidates?.[0];
+  // The model can refuse without setting an inline image; surface that
+  // distinctly so the worker can mark it BLOCKED rather than FAILED.
+  if (candidate?.finishReason && candidate.finishReason !== "STOP") {
+    const reason = (candidate.finishReason as string) ?? "blocked";
+    const detail =
+      (candidate.content?.parts ?? [])
+        .map((p) => p.text)
+        .filter(Boolean)
+        .join(" ") || reason;
+    const err = new Error(`IMAGE_REFUSED:${detail.slice(0, 200)}`);
+    (err as Error & { code?: string }).code = "IMAGE_REFUSED";
+    throw err;
+  }
+
+  const parts = candidate?.content?.parts ?? [];
+  let textCommentary: string | undefined;
   for (const p of parts) {
+    if (p.text) textCommentary = (textCommentary ?? "") + p.text;
     const data = p.inlineData?.data;
-    if (data) {
-      const buf = Buffer.from(data, "base64");
-      await fs.mkdir(path.dirname(outPath), { recursive: true });
-      await fs.writeFile(outPath, buf);
-      return {
-        filePath: outPath,
-        mimeType: p.inlineData?.mimeType ?? "image/png",
-        cost: imageCost(),
-      };
-    }
+    if (!data) continue;
+    const mimeType = p.inlineData?.mimeType ?? "image/png";
+    const buf = Buffer.from(data, "base64");
+    await fs.mkdir(path.dirname(outPath), { recursive: true });
+    await fs.writeFile(outPath, buf);
+    return {
+      filePath: outPath,
+      mimeType,
+      cost: imageCost(),
+      imageRef: { data, mimeType },
+      textCommentary,
+    };
   }
   throw new Error("IMAGE_NO_OUTPUT");
 }

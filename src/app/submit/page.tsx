@@ -3,8 +3,23 @@ import { auth } from "@/lib/auth";
 import { isEmailAllowed } from "@/lib/env";
 import { getAppMode } from "@/lib/queue";
 import { VIDEO_DURATION_SECONDS } from "@/lib/genai";
+import { LOCATIONS, STYLES, type LocationKey, type StyleKey } from "@/lib/refs";
 import SubmitForm from "@/components/SubmitForm";
 import MyMemories from "@/components/MyMemories";
+
+const refs = {
+  styles: (Object.keys(STYLES) as StyleKey[]).map((k) => ({
+    key: k,
+    label: STYLES[k].label,
+    tagline: STYLES[k].tagline,
+    thumb: `/refs/styles/${STYLES[k].file}`,
+  })),
+  locations: (Object.keys(LOCATIONS) as LocationKey[]).map((k) => ({
+    key: k,
+    label: LOCATIONS[k].label,
+    thumb: `/refs/locations/${LOCATIONS[k].file}`,
+  })),
+};
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +55,7 @@ export default async function SubmitPage() {
           ? " — single image"
           : ""}
       </p>
-      <SubmitForm initialMode={state.mode} />
+      <SubmitForm initialMode={state.mode} refs={refs} />
       <MyMemories />
     </main>
   );

@@ -1,10 +1,23 @@
 import { Pool, PoolClient } from "pg";
 import path from "node:path";
+import { promises as fs } from "node:fs";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
-import { reviewPrompt } from "@/lib/prompt";
-import { generateVideo, generateImage, MODELS } from "@/lib/genai";
+import { reviewVibe } from "@/lib/prompt";
+import { generateVideo, generateImage, MODELS, type ImageRef } from "@/lib/genai";
 import { PRICING } from "@/lib/pricing";
+import {
+  isLocationKey,
+  isStyleKey,
+  locationRefPath,
+  pickRandomLocation,
+  readRefAsBase64,
+  styleRefPath,
+  type LocationKey,
+  type StyleKey,
+} from "@/lib/refs";
+import { buildQilinPrompt } from "@/lib/qilin";
+import { deletePortrait } from "@/lib/upload";
 
 const ADVISORY_LOCK_KEY = 731_001; // arbitrary fixed bigint
 const POLL_IDLE_MS = 2_000;
@@ -78,89 +91,184 @@ async function processOne(): Promise<boolean> {
     const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) return true;
 
-    console.log(`[worker] job=${job.id} mode=${job.mode} prompt="${job.prompt.slice(0, 60)}…"`);
+    console.log(
+      `[worker] job=${job.id} mode=${job.mode} style=${job.style ?? "?"} loc=${job.location ?? "random"} selfie=${!!job.selfiePath} vibe="${(job.prompt ?? "").slice(0, 40)}"`,
+    );
 
-    try {
-      const review = await reviewPrompt(job.prompt, job.mode === "IMAGE" ? "IMAGE" : "VIDEO");
-      // Always record the safety/rewrite call — it spent real tokens.
+    let totalCost = 0;
+    let safetyCost = 0;
+
+    const recordUsage = async (
+      kind: "TEXT" | "IMAGE" | "VIDEO",
+      model: string,
+      cost: number,
+      extras: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cachedTokens?: number;
+        durationSeconds?: number;
+        pricingNote?: string;
+        ok?: boolean;
+        errorCode?: string;
+      } = {},
+    ) => {
       await prisma.usageEvent.create({
         data: {
           jobId: job.id,
-          kind: "TEXT",
-          model: MODELS.text,
-          inputTokens: review.usage.inputTokens,
-          outputTokens: review.usage.outputTokens,
-          cachedTokens: review.usage.cachedTokens,
-          costUsd: review.usage.cost,
-          pricingNote: PRICING.text.note,
-          ok: true,
+          kind,
+          model,
+          costUsd: cost,
+          inputTokens: extras.inputTokens ?? null,
+          outputTokens: extras.outputTokens ?? null,
+          cachedTokens: extras.cachedTokens ?? null,
+          durationSeconds: extras.durationSeconds ?? null,
+          pricingNote: extras.pricingNote,
+          ok: extras.ok ?? true,
+          errorCode: extras.errorCode,
         },
       });
+    };
 
-      if (!review.allow) {
+    try {
+      if (!isStyleKey(job.style)) {
+        throw new Error("INVALID_STYLE");
+      }
+      const style: StyleKey = job.style;
+      const location: LocationKey | null = isLocationKey(job.location)
+        ? job.location
+        : null;
+
+      // 1. Lightweight vibe safety check (only if a vibe was provided).
+      const vibeReview = await reviewVibe(job.prompt ?? "");
+      if (vibeReview.usage.cost > 0) {
+        await recordUsage("TEXT", MODELS.text, vibeReview.usage.cost, {
+          inputTokens: vibeReview.usage.inputTokens,
+          outputTokens: vibeReview.usage.outputTokens,
+          cachedTokens: vibeReview.usage.cachedTokens,
+          pricingNote: PRICING.text.note,
+        });
+        safetyCost += vibeReview.usage.cost;
+        totalCost += vibeReview.usage.cost;
+      }
+      if (!vibeReview.allow) {
         await prisma.$transaction([
           prisma.job.update({
             where: { id: job.id },
             data: {
               status: "BLOCKED",
               errorCode: "SAFETY_BLOCKED",
-              errorMsg: review.reason.slice(0, 500),
+              errorMsg: vibeReview.reason.slice(0, 500),
               rewritten: null,
               completedAt: new Date(),
-              costUsd: review.usage.cost,
+              costUsd: safetyCost,
             },
           }),
-          prisma.$executeRaw`UPDATE "AppState" SET "totalCostUsd" = "totalCostUsd" + ${review.usage.cost} WHERE id = 1`,
+          prisma.$executeRaw`UPDATE "AppState" SET "totalCostUsd" = "totalCostUsd" + ${safetyCost} WHERE id = 1`,
         ]);
-        console.log(`[worker] job=${job.id} blocked: ${review.reason}`);
+        await deletePortrait(job.selfiePath);
+        console.log(`[worker] job=${job.id} blocked: ${vibeReview.reason}`);
         return true;
       }
 
-      await prisma.job.update({
-        where: { id: job.id },
-        data: { rewritten: review.rewritten },
+      // 2. Build the deterministic qilin prompts. Resolve "random" location
+      //    once so the text and image inputs stay consistent.
+      const resolved = buildQilinPrompt({
+        style,
+        location,
+        vibe: vibeReview.cleaned,
+        hasSelfie: !!job.selfiePath,
       });
 
-      const ext = job.mode === "VIDEO" ? "mp4" : "png";
-      const outPath = path.join(env.mediaDir(), `${job.id}.${ext}`);
+      // 3. Load shared image references.
+      const styleRef = await readRefAsBase64(styleRefPath(style));
+      const locationRef = await readRefAsBase64(
+        locationRefPath(resolved.location),
+      );
 
-      const out =
-        job.mode === "VIDEO"
-          ? await generateVideo(review.rewritten, outPath)
-          : await generateImage(review.rewritten, outPath);
-
-      // Per-call event for the generation itself.
-      await prisma.usageEvent.create({
+      await prisma.job.update({
+        where: { id: job.id },
         data: {
-          jobId: job.id,
-          kind: job.mode === "VIDEO" ? "VIDEO" : "IMAGE",
-          model: job.mode === "VIDEO" ? MODELS.video : MODELS.image,
-          durationSeconds: out.durationSeconds ?? null,
-          costUsd: out.cost,
-          pricingNote:
-            job.mode === "VIDEO" ? PRICING.video.note : PRICING.image.note,
-          ok: true,
+          rewritten: resolved.scenePrompt,
+          location: resolved.location, // pin "random" → concrete key
         },
       });
 
-      const totalJobCost = review.usage.cost + out.cost;
+      // 4. Two-stage generation when we have a selfie:
+      //    Stage A: selfie + style ref → clean qilin portrait
+      //    Stage B: portrait + location ref → final composite
+      // Without a selfie we go straight to stage B with style + location refs.
+      let portraitRef: ImageRef | null = null;
+      if (job.selfiePath) {
+        const selfieBuf = await fs.readFile(job.selfiePath);
+        const selfieRef: ImageRef = {
+          data: selfieBuf.toString("base64"),
+          mimeType: "image/jpeg",
+        };
+        const portraitPath = path.join(env.mediaDir(), `${job.id}.portrait.png`);
+        const portrait = await generateImage(resolved.portraitPrompt, portraitPath, {
+          imageRefs: [selfieRef, styleRef],
+        });
+        await recordUsage("IMAGE", MODELS.image, portrait.cost, {
+          pricingNote: PRICING.image.note,
+        });
+        totalCost += portrait.cost;
+        portraitRef = portrait.imageRef;
+      }
 
+      const imgPath = path.join(env.mediaDir(), `${job.id}.png`);
+      const sceneRefs: ImageRef[] = portraitRef
+        ? [portraitRef, locationRef]
+        : [styleRef, locationRef];
+      const img = await generateImage(resolved.scenePrompt, imgPath, {
+        imageRefs: sceneRefs,
+      });
+      await recordUsage("IMAGE", MODELS.image, img.cost, {
+        pricingNote: PRICING.image.note,
+      });
+      totalCost += img.cost;
+
+      // Cleanup intermediate portrait file.
+      if (portraitRef) {
+        await fs
+          .unlink(path.join(env.mediaDir(), `${job.id}.portrait.png`))
+          .catch(() => {});
+      }
+
+      // 5. If VIDEO mode, animate the just-generated image with Veo.
+      let finalPath = img.filePath;
+      let finalMime = img.mimeType;
+      if (job.mode === "VIDEO") {
+        const vidPath = path.join(env.mediaDir(), `${job.id}.mp4`);
+        // Reuse the scene prompt for motion direction; the still image
+        // already encodes subject + style + setting.
+        const vid = await generateVideo(resolved.scenePrompt, vidPath, {
+          imageRef: img.imageRef,
+        });
+        await recordUsage("VIDEO", MODELS.video, vid.cost, {
+          durationSeconds: vid.durationSeconds,
+          pricingNote: PRICING.video.note,
+        });
+        totalCost += vid.cost;
+        finalPath = vid.filePath;
+        finalMime = vid.mimeType;
+      }
+
+      // 6. Mark complete + bump counters + auto-switch mode at video cap.
       await prisma.$transaction(async (tx) => {
         await tx.job.update({
           where: { id: job.id },
           data: {
             status: "COMPLETED",
-            filePath: out.filePath,
-            mimeType: out.mimeType,
-            costUsd: totalJobCost,
+            filePath: finalPath,
+            mimeType: finalMime,
+            costUsd: totalCost,
             completedAt: new Date(),
           },
         });
-        // Atomic counter + auto-switch using raw SQL (Prisma can't conditional-update easily).
         await tx.$executeRaw`
           UPDATE "AppState"
             SET "videoCount" = "videoCount" + ${job.mode === "VIDEO" ? 1 : 0},
-                "totalCostUsd" = "totalCostUsd" + ${totalJobCost},
+                "totalCostUsd" = "totalCostUsd" + ${totalCost},
                 "mode" = CASE
                   WHEN "mode" = 'VIDEO' AND "videoCount" + ${job.mode === "VIDEO" ? 1 : 0} >= "videoCap"
                     THEN 'IMAGE'::"Mode"
@@ -169,38 +277,48 @@ async function processOne(): Promise<boolean> {
             WHERE id = 1
         `;
       });
-      console.log(`[worker] job=${job.id} completed file=${out.filePath} cost=$${totalJobCost.toFixed(4)}`);
+
+      // 7. Selfie is no longer needed — wipe it.
+      await deletePortrait(job.selfiePath);
+      if (job.selfiePath) {
+        await prisma.job.update({
+          where: { id: job.id },
+          data: { selfiePath: null },
+        });
+      }
+
+      console.log(`[worker] job=${job.id} completed file=${finalPath} cost=$${totalCost.toFixed(4)}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Best-effort: record the failed generation attempt with $0 spend so
-      // it shows up in the events log alongside successful ones.
-      await prisma.usageEvent
-        .create({
-          data: {
-            jobId: job.id,
-            kind: job.mode === "VIDEO" ? "VIDEO" : "IMAGE",
-            model: job.mode === "VIDEO" ? MODELS.video : MODELS.image,
-            costUsd: 0,
-            ok: false,
-            errorCode: msg.slice(0, 200),
-          },
-        })
-        .catch(() => {});
+      const refused = msg.startsWith("IMAGE_REFUSED:");
+      // Best-effort: record the failed call with $0 spend.
+      await recordUsage(
+        job.mode === "VIDEO" ? "VIDEO" : "IMAGE",
+        job.mode === "VIDEO" ? MODELS.video : MODELS.image,
+        0,
+        { ok: false, errorCode: msg.slice(0, 200) },
+      ).catch(() => {});
       await prisma.job.update({
         where: { id: job.id },
         data: {
-          status: "FAILED",
-          errorCode: "API_ERROR",
+          status: refused ? "BLOCKED" : "FAILED",
+          errorCode: refused ? "MODEL_REFUSED" : "API_ERROR",
           errorMsg: msg.slice(0, 500),
           completedAt: new Date(),
+          costUsd: totalCost,
         },
       });
-      console.error(`[worker] job=${job.id} failed:`, msg);
+      // On any terminal outcome, drop the selfie.
+      await deletePortrait(job.selfiePath);
+      console.error(`[worker] job=${job.id} ${refused ? "refused" : "failed"}:`, msg);
     }
 
     return true;
   });
 }
+
+// Used in error path; suppress unused import lint.
+void pickRandomLocation;
 
 async function main(): Promise<void> {
   console.log("[worker] starting");
