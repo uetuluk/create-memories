@@ -1,0 +1,17 @@
+[Unit]
+Description=Auto-redeploy create-memories from the deployment branch
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Adjust DEPLOY_DIR to wherever you cloned the deployment branch.
+Environment=DEPLOY_DIR=%h/create-memories
+Environment=ADMIN_ALERT_TO=uet200@nyu.edu
+# Leave ADMIN_ALERT_FROM unset to default to no-reply@<hostname>.
+ExecStart=/bin/bash %h/create-memories/deploy/auto-redeploy.sh
+# Don't fail the service if a single tick fails — the script already
+# handles alerting; we just want to try again on the next timer tick.
+SuccessExitStatus=0 1
+StandardOutput=journal
+StandardError=journal
