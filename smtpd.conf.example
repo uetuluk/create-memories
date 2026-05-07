@@ -1,0 +1,16 @@
+# Allow mail only from your Docker app network.
+# Find the subnet with: docker network inspect create-memories_external | jq '.[0].IPAM.Config'
+table trusted_nets { 172.20.0.0/16 }
+
+listen on 0.0.0.0
+
+queue ttl 4d
+bounce warn-interval 1h, 6h, 2d
+smtp max-message-size 35M
+
+# Present our real FQDN to the outside world.
+# Find via `hostname -f` on the host (typically <host>.shanghai.nyu.edu).
+action "relay_mx" relay helo create.shanghai.nyu.edu
+
+match from local for any action "relay_mx"
+match from src <trusted_nets> for any action "relay_mx"

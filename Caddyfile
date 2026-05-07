@@ -1,0 +1,9 @@
+{$BASE_URL} {
+    encode zstd gzip
+    request_body {
+        max_size 1MB
+    }
+    reverse_proxy app:3000 {
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

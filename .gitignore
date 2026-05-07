@@ -1,0 +1,12 @@
+node_modules
+.next
+.next-build
+dist-worker
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vscode
+data/

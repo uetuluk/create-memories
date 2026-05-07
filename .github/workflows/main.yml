@@ -1,0 +1,68 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  config:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create the location
+        run: mkdir deployment-config
+
+      - name: Copy Caddyfile
+        run: cp ./Caddyfile deployment-config/Caddyfile
+
+      - name: Create smtpd.conf
+        env:
+          TRUSTED_NETS: ${{ vars.SMTP_TRUSTED_NETS }}
+          RELAY_HELO: ${{ vars.SMTP_RELAY_HELO_DOMAIN }}
+        run: |
+          {
+            printf 'table trusted_nets { %s }\n' "$TRUSTED_NETS"
+            echo ""
+            echo "listen on 0.0.0.0"
+            echo ""
+            echo "queue ttl 4d"
+            echo "bounce warn-interval 1h, 6h, 2d"
+            echo "smtp max-message-size 35M"
+            echo ""
+            printf 'action "relay_mx" relay helo %s\n' "$RELAY_HELO"
+            echo ""
+            echo 'match from local for any action "relay_mx"'
+            echo 'match from src <trusted_nets> for any action "relay_mx"'
+          } > ./deployment-config/smtpd.conf
+
+      - name: Copy docker-compose
+        run: cp ./compose.production.yml deployment-config/compose.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: config
+          path: ./deployment-config
+
+  branch:
+    runs-on: ubuntu-latest
+    needs: [config]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Push
+        uses: s0/git-publish-subdir-action@develop
+        env:
+          REPO: self
+          BRANCH: deployment
+          FOLDER: artifacts
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MESSAGE: 'Build: ({sha}) {msg}'
