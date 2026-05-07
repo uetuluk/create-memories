@@ -13,8 +13,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate \
     && npm run build \
-    && npm prune --omit=dev \
-    && npx prisma generate
+    && npm prune --omit=dev
 
 FROM node:22-alpine AS production
 WORKDIR /app
