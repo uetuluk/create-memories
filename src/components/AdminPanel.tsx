@@ -21,18 +21,47 @@ type AdminJob = {
   completedAt: string | null;
   user: { email: string | null };
 };
+type UsageBucket = {
+  kind: "TEXT" | "IMAGE" | "VIDEO";
+  model: string;
+  count: number;
+  costUsd: number;
+};
+type UsageEvent = {
+  id: string;
+  jobId: string | null;
+  kind: "TEXT" | "IMAGE" | "VIDEO";
+  model: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedTokens: number | null;
+  durationSeconds: number | null;
+  costUsd: string | number;
+  ok: boolean;
+  errorCode: string | null;
+  createdAt: string;
+};
+type UsageRes = {
+  buckets: UsageBucket[];
+  recent: UsageEvent[];
+  totalCostUsd: number;
+  totalCount: number;
+};
 
 export default function AdminPanel() {
   const [state, setState] = useState<AppState | null>(null);
   const [jobs, setJobs] = useState<AdminJob[]>([]);
+  const [usage, setUsage] = useState<UsageRes | null>(null);
 
   async function refresh() {
-    const [s, j] = await Promise.all([
+    const [s, j, u] = await Promise.all([
       fetch("/api/mode", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/jobs", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/admin/usage", { cache: "no-store" }).then((r) => r.json()),
     ]);
     setState(s);
     setJobs(j.jobs);
+    setUsage(u);
   }
 
   useEffect(() => {
@@ -111,6 +140,74 @@ export default function AdminPanel() {
             onSave={(videoCap) => patchState({ videoCap })}
             help="Auto-switches mode to IMAGE when this many videos have been generated."
           />
+        </section>
+      )}
+
+      {usage && (
+        <section className="rounded-xl bg-neutral-900 ring-1 ring-neutral-800 p-4">
+          <div className="flex items-baseline justify-between mb-2">
+            <h2 className="text-lg font-medium">API spend</h2>
+            <span className="text-sm">
+              <span className="text-neutral-400">total</span>{" "}
+              <span className="font-medium">${usage.totalCostUsd.toFixed(4)}</span>{" "}
+              <span className="text-neutral-500">({usage.totalCount} calls)</span>
+            </span>
+          </div>
+          {usage.buckets.length === 0 ? (
+            <p className="text-sm text-neutral-500">No API calls yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-neutral-500 text-xs">
+                <tr>
+                  <th className="text-left py-1">Kind</th>
+                  <th className="text-left py-1">Model</th>
+                  <th className="text-right py-1">Calls</th>
+                  <th className="text-right py-1">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.buckets.map((b) => (
+                  <tr key={`${b.kind}-${b.model}`} className="border-t border-neutral-800">
+                    <td className="py-1.5">{b.kind}</td>
+                    <td className="py-1.5 text-neutral-300">{b.model}</td>
+                    <td className="py-1.5 text-right">{b.count}</td>
+                    <td className="py-1.5 text-right">${b.costUsd.toFixed(4)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <details className="mt-3">
+            <summary className="text-xs text-neutral-400 cursor-pointer">
+              Recent events ({usage.recent.length})
+            </summary>
+            <div className="mt-2 space-y-1 max-h-72 overflow-auto">
+              {usage.recent.map((e) => (
+                <div
+                  key={e.id}
+                  className={`text-xs flex gap-2 items-center px-2 py-1 rounded ${
+                    e.ok ? "bg-neutral-950" : "bg-red-950/40"
+                  }`}
+                >
+                  <span className="text-neutral-500 w-32 shrink-0">
+                    {new Date(e.createdAt).toLocaleTimeString()}
+                  </span>
+                  <span className="w-12 shrink-0">{e.kind}</span>
+                  <span className="flex-1 truncate text-neutral-300">{e.model}</span>
+                  <span className="text-neutral-400 w-32 shrink-0 text-right">
+                    {e.kind === "TEXT"
+                      ? `${e.inputTokens ?? 0}→${e.outputTokens ?? 0} tok`
+                      : e.kind === "VIDEO"
+                      ? `${e.durationSeconds ?? 0}s`
+                      : "1 img"}
+                  </span>
+                  <span className="w-20 shrink-0 text-right">
+                    ${Number(e.costUsd).toFixed(4)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
         </section>
       )}
 

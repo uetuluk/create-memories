@@ -87,6 +87,7 @@ model Job {
   createdAt   DateTime  @default(now())
   startedAt   DateTime?
   completedAt DateTime?
+  usage       UsageEvent[]
 
   @@index([status, createdAt])
   @@index([completedAt(sort: Desc)])
@@ -101,4 +102,37 @@ model AppState {
   perUserQuota  Int      @default(10)
   totalCostUsd  Decimal  @default(0) @db.Decimal(8, 4)
   updatedAt     DateTime @updatedAt
+}
+
+enum UsageKind {
+  TEXT
+  IMAGE
+  VIDEO
+}
+
+// One row per real Google API call. Lets us reconcile against the
+// console-reported spend after the event and break down cost by model.
+model UsageEvent {
+  id              String    @id @default(cuid())
+  jobId           String?
+  job             Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  kind            UsageKind
+  model           String
+  // Text models report these; null for image/video.
+  inputTokens     Int?
+  outputTokens    Int?
+  cachedTokens    Int?
+  // Video reports duration; null for text/image.
+  durationSeconds Int?
+  // Estimated cost for this single call (USD).
+  costUsd         Decimal   @db.Decimal(8, 6)
+  // Pricing rate used so we can recompute later if rates change.
+  pricingNote     String?
+  ok              Boolean   @default(true)
+  errorCode       String?
+  createdAt       DateTime  @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([kind, createdAt(sort: Desc)])
+  @@index([jobId])
 }

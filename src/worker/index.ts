@@ -3,12 +3,8 @@ import path from "node:path";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { reviewPrompt } from "@/lib/prompt";
-import {
-  generateVideo,
-  generateImage,
-  VIDEO_COST_USD,
-  IMAGE_COST_USD,
-} from "@/lib/genai";
+import { generateVideo, generateImage, MODELS } from "@/lib/genai";
+import { PRICING } from "@/lib/pricing";
 
 const ADVISORY_LOCK_KEY = 731_001; // arbitrary fixed bigint
 const POLL_IDLE_MS = 2_000;
@@ -86,17 +82,36 @@ async function processOne(): Promise<boolean> {
 
     try {
       const review = await reviewPrompt(job.prompt, job.mode === "IMAGE" ? "IMAGE" : "VIDEO");
+      // Always record the safety/rewrite call — it spent real tokens.
+      await prisma.usageEvent.create({
+        data: {
+          jobId: job.id,
+          kind: "TEXT",
+          model: MODELS.text,
+          inputTokens: review.usage.inputTokens,
+          outputTokens: review.usage.outputTokens,
+          cachedTokens: review.usage.cachedTokens,
+          costUsd: review.usage.cost,
+          pricingNote: PRICING.text.note,
+          ok: true,
+        },
+      });
+
       if (!review.allow) {
-        await prisma.job.update({
-          where: { id: job.id },
-          data: {
-            status: "BLOCKED",
-            errorCode: "SAFETY_BLOCKED",
-            errorMsg: review.reason.slice(0, 500),
-            rewritten: null,
-            completedAt: new Date(),
-          },
-        });
+        await prisma.$transaction([
+          prisma.job.update({
+            where: { id: job.id },
+            data: {
+              status: "BLOCKED",
+              errorCode: "SAFETY_BLOCKED",
+              errorMsg: review.reason.slice(0, 500),
+              rewritten: null,
+              completedAt: new Date(),
+              costUsd: review.usage.cost,
+            },
+          }),
+          prisma.$executeRaw`UPDATE "AppState" SET "totalCostUsd" = "totalCostUsd" + ${review.usage.cost} WHERE id = 1`,
+        ]);
         console.log(`[worker] job=${job.id} blocked: ${review.reason}`);
         return true;
       }
@@ -114,7 +129,21 @@ async function processOne(): Promise<boolean> {
           ? await generateVideo(review.rewritten, outPath)
           : await generateImage(review.rewritten, outPath);
 
-      const cost = job.mode === "VIDEO" ? VIDEO_COST_USD : IMAGE_COST_USD;
+      // Per-call event for the generation itself.
+      await prisma.usageEvent.create({
+        data: {
+          jobId: job.id,
+          kind: job.mode === "VIDEO" ? "VIDEO" : "IMAGE",
+          model: job.mode === "VIDEO" ? MODELS.video : MODELS.image,
+          durationSeconds: out.durationSeconds ?? null,
+          costUsd: out.cost,
+          pricingNote:
+            job.mode === "VIDEO" ? PRICING.video.note : PRICING.image.note,
+          ok: true,
+        },
+      });
+
+      const totalJobCost = review.usage.cost + out.cost;
 
       await prisma.$transaction(async (tx) => {
         await tx.job.update({
@@ -123,7 +152,7 @@ async function processOne(): Promise<boolean> {
             status: "COMPLETED",
             filePath: out.filePath,
             mimeType: out.mimeType,
-            costUsd: cost,
+            costUsd: totalJobCost,
             completedAt: new Date(),
           },
         });
@@ -131,7 +160,7 @@ async function processOne(): Promise<boolean> {
         await tx.$executeRaw`
           UPDATE "AppState"
             SET "videoCount" = "videoCount" + ${job.mode === "VIDEO" ? 1 : 0},
-                "totalCostUsd" = "totalCostUsd" + ${cost},
+                "totalCostUsd" = "totalCostUsd" + ${totalJobCost},
                 "mode" = CASE
                   WHEN "mode" = 'VIDEO' AND "videoCount" + ${job.mode === "VIDEO" ? 1 : 0} >= "videoCap"
                     THEN 'IMAGE'::"Mode"
@@ -140,9 +169,23 @@ async function processOne(): Promise<boolean> {
             WHERE id = 1
         `;
       });
-      console.log(`[worker] job=${job.id} completed file=${out.filePath} cost=$${cost.toFixed(4)}`);
+      console.log(`[worker] job=${job.id} completed file=${out.filePath} cost=$${totalJobCost.toFixed(4)}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Best-effort: record the failed generation attempt with $0 spend so
+      // it shows up in the events log alongside successful ones.
+      await prisma.usageEvent
+        .create({
+          data: {
+            jobId: job.id,
+            kind: job.mode === "VIDEO" ? "VIDEO" : "IMAGE",
+            model: job.mode === "VIDEO" ? MODELS.video : MODELS.image,
+            costUsd: 0,
+            ok: false,
+            errorCode: msg.slice(0, 200),
+          },
+        })
+        .catch(() => {});
       await prisma.job.update({
         where: { id: job.id },
         data: {

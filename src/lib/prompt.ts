@@ -1,10 +1,17 @@
 import { Type } from "@google/genai";
 import { ai, MODELS } from "@/lib/genai";
+import { textCost } from "@/lib/pricing";
 
 export type PromptReview = {
   allow: boolean;
   reason: string;
   rewritten: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens: number;
+    cost: number;
+  };
 };
 
 const SYSTEM = `You are the safety + prompt-rewriting layer for a public student art event called "Create Memories" hosted by NYU Shanghai's AI Committee.
@@ -55,23 +62,38 @@ export async function reviewPrompt(
     },
   });
 
+  const usage = (() => {
+    const m = res.usageMetadata;
+    const inputTokens = m?.promptTokenCount ?? 0;
+    const outputTokens = m?.candidatesTokenCount ?? 0;
+    const cachedTokens = m?.cachedContentTokenCount ?? 0;
+    return {
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+      cost: textCost(inputTokens, outputTokens, cachedTokens),
+    };
+  })();
+
   const text = res.text ?? "";
-  let parsed: PromptReview;
+  const fail = (reason: string): PromptReview => ({
+    allow: false,
+    reason,
+    rewritten: "",
+    usage,
+  });
+
+  let parsed: { allow?: unknown; reason?: unknown; rewritten?: unknown };
   try {
     parsed = JSON.parse(text);
   } catch {
-    return {
-      allow: false,
-      reason: "Could not parse safety response. Please try a different prompt.",
-      rewritten: "",
-    };
+    return fail("Could not parse safety response. Please try a different prompt.");
   }
 
-  if (typeof parsed.allow !== "boolean") {
-    return { allow: false, reason: "Invalid safety response.", rewritten: "" };
-  }
-  if (parsed.allow && !parsed.rewritten?.trim()) {
-    return { allow: false, reason: "Prompt was empty after rewriting.", rewritten: "" };
-  }
-  return parsed;
+  if (typeof parsed.allow !== "boolean") return fail("Invalid safety response.");
+  const reason = typeof parsed.reason === "string" ? parsed.reason : "";
+  const rewritten =
+    typeof parsed.rewritten === "string" ? parsed.rewritten : "";
+  if (parsed.allow && !rewritten.trim()) return fail("Prompt was empty after rewriting.");
+  return { allow: parsed.allow, reason, rewritten, usage };
 }

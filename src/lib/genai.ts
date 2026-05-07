@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { env } from "@/lib/env";
+import { imageCost, videoCost } from "@/lib/pricing";
 
 export const MODELS = {
   text: "gemini-3.1-flash-lite-preview",
@@ -21,10 +22,17 @@ export function ai(): GoogleGenAI {
 export const VIDEO_DURATION_SECONDS = 4;
 export const VIDEO_ASPECT = "16:9";
 
-// $0.05 / s @ 720p Veo 3.1 Lite (May 2026 list pricing)
-export const VIDEO_COST_USD = VIDEO_DURATION_SECONDS * 0.05;
-// $0.067 / image @ 1K Nano Banana 2 (May 2026 list pricing)
-export const IMAGE_COST_USD = 0.067;
+// Convenience re-exports for callers that just need a flat estimate.
+export const VIDEO_COST_USD = videoCost(VIDEO_DURATION_SECONDS);
+export const IMAGE_COST_USD = imageCost();
+
+export type GenerationResult = {
+  filePath: string;
+  mimeType: string;
+  cost: number;
+  // For VIDEO: `durationSeconds`. For IMAGE: nothing else useful (flat per-image).
+  durationSeconds?: number;
+};
 
 const POLL_INTERVAL_MS = 10_000;
 const MAX_POLLS = 30; // 5 minutes ceiling
@@ -32,7 +40,7 @@ const MAX_POLLS = 30; // 5 minutes ceiling
 export async function generateVideo(
   prompt: string,
   outPath: string,
-): Promise<{ filePath: string; mimeType: string }> {
+): Promise<GenerationResult> {
   const client = ai();
   let op = await client.models.generateVideos({
     model: MODELS.video,
@@ -77,13 +85,18 @@ export async function generateVideo(
     throw new Error("VEO_NO_BYTES_OR_URI");
   }
 
-  return { filePath: outPath, mimeType: generated.mimeType ?? "video/mp4" };
+  return {
+    filePath: outPath,
+    mimeType: generated.mimeType ?? "video/mp4",
+    cost: videoCost(VIDEO_DURATION_SECONDS),
+    durationSeconds: VIDEO_DURATION_SECONDS,
+  };
 }
 
 export async function generateImage(
   prompt: string,
   outPath: string,
-): Promise<{ filePath: string; mimeType: string }> {
+): Promise<GenerationResult> {
   const client = ai();
   const res = await client.models.generateContent({
     model: MODELS.image,
@@ -110,6 +123,7 @@ export async function generateImage(
       return {
         filePath: outPath,
         mimeType: p.inlineData?.mimeType ?? "image/png",
+        cost: imageCost(),
       };
     }
   }
