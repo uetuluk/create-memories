@@ -26,6 +26,7 @@ export const env = {
     process.env.PUBLIC_URL ??
     process.env.AUTH_URL ??
     "http://localhost:3000",
+  surveyUrl: () => process.env.SURVEY_URL ?? null,
 };
 
 export function isAdmin(email: string | null | undefined): boolean {

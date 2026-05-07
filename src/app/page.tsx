@@ -4,13 +4,21 @@ import GalleryGrid from "@/components/GalleryGrid";
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
-  const submitUrl = `${env.publicUrl()}/submit`;
-  const qrDataUrl = await QRCode.toDataURL(submitUrl, {
+async function makeQr(target: string): Promise<string> {
+  return QRCode.toDataURL(target, {
     margin: 1,
     color: { dark: "#ffffff", light: "#00000000" },
-    width: 320,
+    width: 240,
   });
+}
+
+export default async function HomePage() {
+  const submitUrl = `${env.publicUrl()}/submit`;
+  const surveyUrl = env.surveyUrl();
+  const [submitQr, surveyQr] = await Promise.all([
+    makeQr(submitUrl),
+    surveyUrl ? makeQr(surveyUrl) : Promise.resolve(null),
+  ]);
 
   return (
     <main className="relative min-h-screen p-6 lg:p-10">
@@ -25,20 +33,54 @@ export default async function HomePage() {
 
       <GalleryGrid />
 
-      {/* Floating QR — sits on top of the gallery; OK if it covers a tile. */}
-      <aside
-        className="fixed bottom-6 right-6 lg:bottom-10 lg:right-10 z-50 flex flex-col items-center bg-neutral-900/95 backdrop-blur rounded-2xl p-4 shadow-2xl ring-1 ring-neutral-800"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={qrDataUrl}
-          alt={`QR code for ${submitUrl}`}
-          className="w-44 h-44 lg:w-64 lg:h-64"
+      {/* Floating QR (submit) — bottom right. */}
+      <FloatingQr
+        position="right"
+        dataUrl={submitQr}
+        href={submitUrl}
+        caption="Scan to create yours"
+      />
+
+      {surveyQr && surveyUrl && (
+        <FloatingQr
+          position="left"
+          dataUrl={surveyQr}
+          href={surveyUrl}
+          caption="Tell us what you thought"
         />
-        <p className="text-sm text-neutral-200 mt-2 text-center font-medium">
-          Scan to submit a prompt
-        </p>
-      </aside>
+      )}
     </main>
+  );
+}
+
+function FloatingQr({
+  dataUrl,
+  href,
+  caption,
+  position,
+}: {
+  dataUrl: string;
+  href: string;
+  caption: string;
+  position: "left" | "right";
+}) {
+  const sideClass =
+    position === "right"
+      ? "bottom-4 right-4 lg:bottom-6 lg:right-6"
+      : "bottom-4 left-4 lg:bottom-6 lg:left-6";
+  return (
+    <aside
+      className={`fixed ${sideClass} z-50 flex flex-col items-center bg-neutral-900/95 backdrop-blur rounded-2xl p-3 shadow-2xl ring-1 ring-neutral-800`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={dataUrl}
+        alt={`QR code for ${href}`}
+        className="w-28 h-28 lg:w-40 lg:h-40"
+      />
+      <p className="text-xs lg:text-sm text-neutral-200 mt-1.5 text-center font-medium max-w-[10rem]">
+        {caption}
+      </p>
+    </aside>
   );
 }
