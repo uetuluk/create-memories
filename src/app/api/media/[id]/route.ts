@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs, createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { prisma } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { isAdmin } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +16,15 @@ export async function GET(
     where: { id },
     select: { filePath: true, mimeType: true, hidden: true, status: true },
   });
-  if (!job || job.status !== "COMPLETED" || job.hidden || !job.filePath)
+  if (!job || job.status !== "COMPLETED" || !job.filePath)
     return new NextResponse("not found", { status: 404 });
+  if (job.hidden) {
+    // Hidden items are still served to admins so they can review and
+    // potentially unhide them.
+    const session = await auth();
+    if (!isAdmin(session?.user?.email))
+      return new NextResponse("not found", { status: 404 });
+  }
 
   let stat;
   try {

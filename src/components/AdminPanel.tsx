@@ -16,6 +16,7 @@ type AdminJob = {
   prompt: string;
   rewritten: string | null;
   hidden: boolean;
+  mimeType: string | null;
   errorMsg: string | null;
   createdAt: string;
   completedAt: string | null;
@@ -217,36 +218,75 @@ export default function AdminPanel() {
           {jobs.map((j) => (
             <div
               key={j.id}
-              className="rounded-lg bg-neutral-900 ring-1 ring-neutral-800 p-3 text-sm flex gap-3"
+              className="rounded-lg bg-neutral-900 ring-1 ring-neutral-800 p-3 text-sm"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex gap-2 items-center">
-                  <span className="text-xs text-neutral-500">{j.user.email}</span>
-                  <span className="text-xs px-1.5 rounded bg-neutral-800">
-                    {j.mode}
-                  </span>
-                  <span className="text-xs px-1.5 rounded bg-neutral-800">
+              <div className="flex gap-3">
+                {j.status === "COMPLETED" ? (
+                  <a
+                    href={`/api/media/${j.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 w-24 aspect-video rounded-md bg-black overflow-hidden ring-1 ring-neutral-800"
+                    title="Open full size"
+                  >
+                    {j.mimeType?.startsWith("video/") || j.mode === "VIDEO" ? (
+                      <video
+                        src={`/api/media/${j.id}`}
+                        muted
+                        loop
+                        playsInline
+                        autoPlay
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/media/${j.id}`}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </a>
+                ) : (
+                  <div className="shrink-0 w-24 aspect-video rounded-md bg-neutral-950 ring-1 ring-neutral-800 flex items-center justify-center text-[10px] text-neutral-600">
                     {j.status}
-                  </span>
-                  {j.hidden && (
-                    <span className="text-xs px-1.5 rounded bg-amber-900">
-                      hidden
-                    </span>
-                  )}
-                </div>
-                <div className="mt-1 truncate">{j.prompt}</div>
-                {j.errorMsg && (
-                  <div className="text-xs text-red-300 mt-1 truncate">
-                    {j.errorMsg}
                   </div>
                 )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <span className="text-xs text-neutral-500 truncate max-w-full">
+                      {j.user.email}
+                    </span>
+                    <span className="text-xs px-1.5 rounded bg-neutral-800">
+                      {j.mode}
+                    </span>
+                    <span className="text-xs px-1.5 rounded bg-neutral-800">
+                      {j.status}
+                    </span>
+                    {j.hidden && (
+                      <span className="text-xs px-1.5 rounded bg-amber-900">
+                        hidden
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 line-clamp-2">{j.prompt || "(no vibe)"}</div>
+                  {j.errorMsg && (
+                    <div className="text-xs text-red-300 mt-1 line-clamp-2">
+                      {j.errorMsg}
+                    </div>
+                  )}
+                </div>
               </div>
               {j.status === "COMPLETED" && (
                 <button
                   onClick={() => setHidden(j.id, !j.hidden)}
-                  className="self-start rounded-md px-2 py-1 text-xs bg-neutral-800"
+                  className={`mt-3 w-full rounded-md py-2 text-sm font-medium ${
+                    j.hidden
+                      ? "bg-neutral-800 text-neutral-200"
+                      : "bg-amber-900/50 text-amber-100 ring-1 ring-amber-800"
+                  }`}
                 >
-                  {j.hidden ? "Unhide" : "Hide"}
+                  {j.hidden ? "Unhide" : "Hide from gallery"}
                 </button>
               )}
             </div>
