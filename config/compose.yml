@@ -1,0 +1,111 @@
+services:
+  db:
+    image: postgres:16
+    restart: always
+    shm_size: 128mb
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${DB_USER:-app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-app}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-app}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app-migrate:
+    image: ghcr.io/${IMAGE_OWNER}/create-memories:latest
+    restart: 'no'
+    env_file: .env
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
+  app:
+    image: ghcr.io/${IMAGE_OWNER}/create-memories:latest
+    restart: always
+    env_file: .env
+    environment:
+      MEDIA_DIR: /data/media
+    command: ['node', 'server.js']
+    volumes:
+      - media:/data/media
+    depends_on:
+      db:
+        condition: service_healthy
+      app-migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+      - external
+
+  worker:
+    image: ghcr.io/${IMAGE_OWNER}/create-memories:latest
+    restart: always
+    env_file: .env
+    environment:
+      MEDIA_DIR: /data/media
+    command: ['node', 'dist-worker/worker/index.js']
+    volumes:
+      - media:/data/media
+    depends_on:
+      db:
+        condition: service_healthy
+      app-migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+      - external
+
+  caddy:
+    image: caddy:latest
+    restart: always
+    env_file: .env
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - external
+
+  smtp-relay:
+    image: wodby/opensmtpd:7
+    container_name: create-memories-smtp-relay
+    restart: unless-stopped
+    volumes:
+      - ./smtpd.conf:/etc/smtpd/smtpd.custom.conf:ro
+      - smtpd-spool:/var/spool/smtpd
+    networks:
+      - external
+
+volumes:
+  db-data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  media:
+    driver: local
+  smtpd-spool:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  external:
+    driver: bridge
