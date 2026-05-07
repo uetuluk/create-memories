@@ -1,15 +1,18 @@
 [Unit]
 Description=Auto-redeploy create-memories from the deployment branch
-After=docker.service network-online.target
-Requires=docker.service
+# This is a user-mode service, so it cannot reference system units like
+# docker.service / network-online.target. The script handles a missing
+# or stopped docker by failing and emailing the admin.
 
 [Service]
 Type=oneshot
-# Adjust DEPLOY_DIR to wherever you cloned the deployment branch.
-Environment=DEPLOY_DIR=%h/create-memories
+# The deployment branch's published artifact lives under <repo>/config/,
+# courtesy of the s0/git-publish-subdir-action workflow. The script and
+# the compose stack both run from there.
+Environment=DEPLOY_DIR=%h/create-memories/config
 Environment=ADMIN_ALERT_TO=uet200@nyu.edu
 # Leave ADMIN_ALERT_FROM unset to default to no-reply@<hostname>.
-ExecStart=/bin/bash %h/create-memories/deploy/auto-redeploy.sh
+ExecStart=/bin/bash %h/create-memories/config/deploy/auto-redeploy.sh
 # Don't fail the service if a single tick fails — the script already
 # handles alerting; we just want to try again on the next timer tick.
 SuccessExitStatus=0 1
