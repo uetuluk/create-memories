@@ -15,13 +15,18 @@ relay Auth.js uses for magic-link emails).
 
 ## Install on `create`
 
+Symlinks the unit files out of the deployment-branch checkout so a
+plain `git pull` automatically updates them on the host. Only run
+this once.
+
 ```bash
 ssh create
 
-# 1. Drop the unit files into the user's systemd dir
+# 1. Symlink the unit files into the user's systemd dir.
+#    Adjust the source path if you cloned to a different location.
 mkdir -p ~/.config/systemd/user
-cp ~/create-memories/deploy/systemd/create-memories-redeploy.service ~/.config/systemd/user/
-cp ~/create-memories/deploy/systemd/create-memories-redeploy.timer   ~/.config/systemd/user/
+ln -sf ~/create-memories/config/deploy/systemd/create-memories-redeploy.service ~/.config/systemd/user/
+ln -sf ~/create-memories/config/deploy/systemd/create-memories-redeploy.timer   ~/.config/systemd/user/
 
 # 2. Enable + start the timer
 systemctl --user daemon-reload
@@ -37,6 +42,14 @@ journalctl --user -u create-memories-redeploy.service -n 50 --no-pager
 # Manual trigger (handy for testing the email path):
 systemctl --user start create-memories-redeploy.service
 journalctl --user -u create-memories-redeploy.service -f
+```
+
+When unit files change in git, the symlink already points at the new
+content; just reload + restart the timer:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart create-memories-redeploy.timer
 ```
 
 ## How alerts work
@@ -67,6 +80,7 @@ systemctl --user disable create-memories-redeploy.timer
 
 ```bash
 systemctl --user disable --now create-memories-redeploy.timer
-rm ~/.config/systemd/user/create-memories-redeploy.{service,timer}
+unlink ~/.config/systemd/user/create-memories-redeploy.service
+unlink ~/.config/systemd/user/create-memories-redeploy.timer
 systemctl --user daemon-reload
 ```
