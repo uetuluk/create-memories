@@ -352,6 +352,63 @@ export default function SubmitForm({
         <p className="text-sm text-red-400">Error: {error}</p>
       ) : null}
 
+      <details className="rounded-lg bg-neutral-900/60 ring-1 ring-neutral-800 p-3 text-xs text-neutral-400">
+        <summary className="cursor-pointer font-medium text-neutral-300">
+          What happens to my photo & data?
+        </summary>
+        <ul className="mt-2 space-y-1.5 list-disc pl-4">
+          <li>
+            <strong className="text-neutral-200">Your selfie is deleted</strong>{" "}
+            from our server as soon as your generation finishes (success or
+            failure). We don&apos;t keep the original photo.
+          </li>
+          <li>
+            <strong className="text-neutral-200">Generated results are kept</strong>{" "}
+            for the duration of the event so they can appear on the public
+            gallery alongside everyone else&apos;s.
+          </li>
+          <li>
+            Generation is performed by{" "}
+            <a
+              href="https://ai.google.dev/"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              Google AI Studio
+            </a>{" "}
+            (Gemini Nano Banana 2 for images, Veo 3.1 Lite for video). Your
+            inputs are sent to Google for processing, subject to their{" "}
+            <a
+              href="https://ai.google.dev/gemini-api/terms"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              terms
+            </a>
+            . All Google-generated images carry an invisible{" "}
+            <a
+              href="https://deepmind.google/technologies/synthid/"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              SynthID
+            </a>{" "}
+            watermark.
+          </li>
+          <li>
+            Run by the NYU Shanghai AI Committee · Infrastructure & Tools
+            subcommittee. Email{" "}
+            <a href="mailto:uet200@nyu.edu" className="underline">
+              uet200@nyu.edu
+            </a>{" "}
+            to have a result removed.
+          </li>
+        </ul>
+      </details>
+
       <button
         type="submit"
         disabled={submitting}
@@ -359,6 +416,10 @@ export default function SubmitForm({
       >
         {submitting ? "Submitting…" : `Generate (${initialMode.toLowerCase()})`}
       </button>
+      <p className="text-[11px] text-neutral-500 text-center">
+        By tapping Generate, you confirm the photo (if any) is of yourself or
+        someone who consented, and you agree to the data handling above.
+      </p>
     </form>
   );
 }
