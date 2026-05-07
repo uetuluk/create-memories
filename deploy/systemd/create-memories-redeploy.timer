@@ -1,0 +1,14 @@
+[Unit]
+Description=Run create-memories redeploy every 5 minutes
+Requires=create-memories-redeploy.service
+
+[Timer]
+# First run 1 min after boot, then every 5 min on a wall-clock cadence.
+OnBootSec=1min
+OnUnitActiveSec=5min
+AccuracySec=15s
+Unit=create-memories-redeploy.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target
