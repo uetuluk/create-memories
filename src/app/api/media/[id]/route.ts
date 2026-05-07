@@ -24,12 +24,25 @@ export async function GET(
     return new NextResponse("missing on disk", { status: 404 });
   }
 
+  const ext =
+    job.mimeType === "video/mp4"
+      ? "mp4"
+      : job.mimeType === "image/png"
+      ? "png"
+      : job.mimeType === "image/jpeg"
+      ? "jpg"
+      : "bin";
+  const wantsDownload = _req.nextUrl.searchParams.get("download") === "1";
+
+  const headers: Record<string, string> = {
+    "Content-Type": job.mimeType ?? "application/octet-stream",
+    "Content-Length": String(stat.size),
+    "Cache-Control": "public, max-age=31536000, immutable",
+  };
+  if (wantsDownload) {
+    headers["Content-Disposition"] = `attachment; filename="create-memories-${id}.${ext}"`;
+  }
+
   const stream = Readable.toWeb(createReadStream(job.filePath)) as ReadableStream<Uint8Array>;
-  return new NextResponse(stream, {
-    headers: {
-      "Content-Type": job.mimeType ?? "application/octet-stream",
-      "Content-Length": String(stat.size),
-      "Cache-Control": "public, max-age=31536000, immutable",
-    },
-  });
+  return new NextResponse(stream, { headers });
 }

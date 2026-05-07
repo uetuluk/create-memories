@@ -6,6 +6,7 @@ type AppState = {
   mode: Mode;
   videoCount: number;
   videoCap: number;
+  perUserQuota: number;
   totalCostUsd: string;
 };
 type AdminJob = {
@@ -49,6 +50,15 @@ export default function AdminPanel() {
     refresh();
   }
 
+  async function patchState(body: Partial<{ videoCap: number; perUserQuota: number }>) {
+    await fetch("/api/mode", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    refresh();
+  }
+
   async function setHidden(id: string, hidden: boolean) {
     await fetch("/api/admin/jobs", {
       method: "PATCH",
@@ -61,30 +71,46 @@ export default function AdminPanel() {
   return (
     <div className="space-y-6 mt-6">
       {state && (
-        <section className="rounded-xl bg-neutral-900 ring-1 ring-neutral-800 p-4">
-          <div className="text-sm text-neutral-400">App state</div>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-            <div>Mode</div>
-            <div className="font-medium">{state.mode}</div>
-            <div>Videos</div>
-            <div className="font-medium">
-              {state.videoCount} / {state.videoCap}
+        <section className="rounded-xl bg-neutral-900 ring-1 ring-neutral-800 p-4 space-y-4">
+          <div>
+            <div className="text-sm text-neutral-400">App state</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div>Mode</div>
+              <div className="font-medium">{state.mode}</div>
+              <div>Videos</div>
+              <div className="font-medium">
+                {state.videoCount} / {state.videoCap}
+              </div>
+              <div>Total spent</div>
+              <div className="font-medium">${state.totalCostUsd}</div>
             </div>
-            <div>Total spent</div>
-            <div className="font-medium">${state.totalCostUsd}</div>
+            <div className="mt-3 flex gap-2">
+              {(["VIDEO", "IMAGE", "OFF"] as const).map((m) => (
+                <button
+                  key={m}
+                  disabled={m === state.mode}
+                  onClick={() => setMode(m)}
+                  className="rounded-lg px-3 py-1.5 text-sm bg-white text-black disabled:opacity-40"
+                >
+                  Set {m}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="mt-3 flex gap-2">
-            {(["VIDEO", "IMAGE", "OFF"] as const).map((m) => (
-              <button
-                key={m}
-                disabled={m === state.mode}
-                onClick={() => setMode(m)}
-                className="rounded-lg px-3 py-1.5 text-sm bg-white text-black disabled:opacity-40"
-              >
-                Set {m}
-              </button>
-            ))}
-          </div>
+
+          <NumberSetting
+            label="Per-user quota"
+            value={state.perUserQuota}
+            onSave={(perUserQuota) => patchState({ perUserQuota })}
+            help="Max generations per user (counts QUEUED + RUNNING + COMPLETED)."
+          />
+
+          <NumberSetting
+            label="Video cap"
+            value={state.videoCap}
+            onSave={(videoCap) => patchState({ videoCap })}
+            help="Auto-switches mode to IMAGE when this many videos have been generated."
+          />
         </section>
       )}
 
@@ -130,6 +156,50 @@ export default function AdminPanel() {
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function NumberSetting({
+  label,
+  value,
+  onSave,
+  help,
+}: {
+  label: string;
+  value: number;
+  onSave: (next: number) => void | Promise<void>;
+  help?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Only adopt the server value when we don't have a local edit in progress.
+  const display = draft ?? String(value);
+  const dirty = draft !== null && draft !== String(value);
+  const parsed = Number(display);
+  const valid = Number.isFinite(parsed) && parsed >= 0 && Number.isInteger(parsed);
+  return (
+    <div>
+      <div className="text-sm text-neutral-400">{label}</div>
+      <div className="mt-2 flex gap-2 items-center">
+        <input
+          type="number"
+          min={0}
+          value={display}
+          onChange={(e) => setDraft(e.target.value)}
+          className="w-24 rounded-lg bg-neutral-950 ring-1 ring-neutral-800 px-2 py-1 text-sm"
+        />
+        <button
+          disabled={!dirty || !valid}
+          onClick={async () => {
+            await onSave(parsed);
+            setDraft(null);
+          }}
+          className="rounded-lg px-3 py-1 text-sm bg-white text-black disabled:opacity-40"
+        >
+          Save
+        </button>
+        {help && <span className="text-xs text-neutral-500">{help}</span>}
+      </div>
     </div>
   );
 }

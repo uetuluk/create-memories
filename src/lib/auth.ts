@@ -14,6 +14,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       server: process.env.EMAIL_SERVER || "smtp://localhost:25",
       from: process.env.EMAIL_FROM || "no-reply@localhost",
       maxAge: 60 * 60, // 1h magic-link validity
+      ...(process.env.NODE_ENV !== "production"
+        ? {
+            sendVerificationRequest: async ({ identifier, url }) => {
+              console.log(
+                `\n\n=== MAGIC LINK (dev) ===\nto: ${identifier}\n${url}\n========================\n\n`,
+              );
+            },
+          }
+        : {}),
     }),
   ],
   pages: { signIn: "/signin", verifyRequest: "/signin/verify" },

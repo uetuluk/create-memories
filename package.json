@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build && tsc -p tsconfig.worker.json",
     "start": "next start",
-    "worker": "tsx src/worker/index.ts",
+    "worker": "tsx --env-file=.env.local src/worker/index.ts",
     "worker:prod": "node dist-worker/worker/index.js",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

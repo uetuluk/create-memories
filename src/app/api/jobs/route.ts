@@ -36,6 +36,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Per-user cap across QUEUED + RUNNING + COMPLETED (failures and blocks
+  // don't count against the user — they didn't get a result).
+  const used = await prisma.job.count({
+    where: {
+      userId: session.user.id,
+      status: { in: ["QUEUED", "RUNNING", "COMPLETED"] },
+    },
+  });
+  if (used >= state.perUserQuota) {
+    return NextResponse.json(
+      { error: "user_limit_reached", limit: state.perUserQuota, used },
+      { status: 429 },
+    );
+  }
+
   const job = await prisma.job.create({
     data: {
       userId: session.user.id,
@@ -53,7 +68,37 @@ export async function GET(req: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const id = req.nextUrl.searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
+
+  // No `id` → return this user's own completed jobs (newest first) + quota.
+  if (!id) {
+    const [items, used, state] = await Promise.all([
+      prisma.job.findMany({
+        where: {
+          userId: session.user.id,
+          status: "COMPLETED",
+        },
+        orderBy: { completedAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          mode: true,
+          mimeType: true,
+          prompt: true,
+          rewritten: true,
+          hidden: true,
+          completedAt: true,
+        },
+      }),
+      prisma.job.count({
+        where: {
+          userId: session.user.id,
+          status: { in: ["QUEUED", "RUNNING", "COMPLETED"] },
+        },
+      }),
+      getAppMode(),
+    ]);
+    return NextResponse.json({ items, used, limit: state.perUserQuota });
+  }
 
   const job = await prisma.job.findUnique({
     where: { id },

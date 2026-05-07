@@ -10,5 +10,12 @@ services:
     volumes:
       - pgdata-dev:/var/lib/postgresql/data
 
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP for the app
+      - "127.0.0.1:8025:8025"   # Web UI (read magic links here)
+
 volumes:
   pgdata-dev:

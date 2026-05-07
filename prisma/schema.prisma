@@ -94,10 +94,11 @@ model Job {
 }
 
 model AppState {
-  id           Int      @id @default(1)
-  mode         Mode     @default(VIDEO)
-  videoCount   Int      @default(0)
-  videoCap     Int      @default(200)
-  totalCostUsd Decimal  @default(0) @db.Decimal(8, 4)
-  updatedAt    DateTime @updatedAt
+  id            Int      @id @default(1)
+  mode          Mode     @default(VIDEO)
+  videoCount    Int      @default(0)
+  videoCap      Int      @default(200)
+  perUserQuota  Int      @default(10)
+  totalCostUsd  Decimal  @default(0) @db.Decimal(8, 4)
+  updatedAt     DateTime @updatedAt
 }

@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { isEmailAllowed } from "@/lib/env";
 import { getAppMode } from "@/lib/queue";
+import { VIDEO_DURATION_SECONDS } from "@/lib/genai";
 import SubmitForm from "@/components/SubmitForm";
+import MyMemories from "@/components/MyMemories";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +34,14 @@ export default async function SubmitPage() {
       </p>
       <p className="text-sm text-neutral-500 mt-4">
         Current mode: <span className="text-neutral-200">{state.mode}</span>
-        {state.mode === "VIDEO" ? " — 5s video" : state.mode === "IMAGE" ? " — single image" : ""}
+        {state.mode === "VIDEO"
+          ? ` — ${VIDEO_DURATION_SECONDS}s video`
+          : state.mode === "IMAGE"
+          ? " — single image"
+          : ""}
       </p>
       <SubmitForm initialMode={state.mode} />
+      <MyMemories />
     </main>
   );
 }

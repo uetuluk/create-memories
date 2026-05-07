@@ -17,16 +17,31 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const mode = body?.mode;
-  if (!["VIDEO", "IMAGE", "OFF"].includes(mode))
-    return NextResponse.json({ error: "bad_mode" }, { status: 400 });
+  const data: {
+    mode?: "VIDEO" | "IMAGE" | "OFF";
+    videoCap?: number;
+    perUserQuota?: number;
+  } = {};
 
-  const updated = await prisma.appState.update({
-    where: { id: 1 },
-    data: {
-      mode,
-      ...(typeof body?.videoCap === "number" ? { videoCap: body.videoCap } : {}),
-    },
-  });
+  if (body?.mode !== undefined) {
+    if (!["VIDEO", "IMAGE", "OFF"].includes(body.mode))
+      return NextResponse.json({ error: "bad_mode" }, { status: 400 });
+    data.mode = body.mode;
+  }
+  if (body?.videoCap !== undefined) {
+    if (typeof body.videoCap !== "number" || body.videoCap < 0)
+      return NextResponse.json({ error: "bad_video_cap" }, { status: 400 });
+    data.videoCap = Math.floor(body.videoCap);
+  }
+  if (body?.perUserQuota !== undefined) {
+    if (typeof body.perUserQuota !== "number" || body.perUserQuota < 0)
+      return NextResponse.json({ error: "bad_per_user_quota" }, { status: 400 });
+    data.perUserQuota = Math.floor(body.perUserQuota);
+  }
+
+  if (Object.keys(data).length === 0)
+    return NextResponse.json({ error: "no_changes" }, { status: 400 });
+
+  const updated = await prisma.appState.update({ where: { id: 1 }, data });
   return NextResponse.json(updated);
 }

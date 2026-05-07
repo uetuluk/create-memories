@@ -4,7 +4,7 @@ import path from "node:path";
 import { env } from "@/lib/env";
 
 export const MODELS = {
-  text: "gemini-3.1-flash",
+  text: "gemini-3.1-flash-lite-preview",
   video: "veo-3.1-lite-generate-preview",
   image: "gemini-3.1-flash-image-preview",
 } as const;
@@ -15,8 +15,10 @@ export function ai(): GoogleGenAI {
   return _client;
 }
 
-export const VIDEO_DURATION_SECONDS = 5;
-export const VIDEO_RESOLUTION = "720p";
+// Veo 3.1 Lite via the Gemini API supports 4 / 6 / 8 second durations.
+// Output resolution is fixed at 720p; the Gemini API does not accept a
+// `resolution` parameter (only Vertex AI does).
+export const VIDEO_DURATION_SECONDS = 4;
 export const VIDEO_ASPECT = "16:9";
 
 // $0.05 / s @ 720p Veo 3.1 Lite (May 2026 list pricing)
@@ -38,7 +40,6 @@ export async function generateVideo(
     config: {
       aspectRatio: VIDEO_ASPECT,
       durationSeconds: VIDEO_DURATION_SECONDS,
-      resolution: VIDEO_RESOLUTION,
       numberOfVideos: 1,
     },
   });
@@ -50,7 +51,14 @@ export async function generateVideo(
     op = await client.operations.get({ operation: op });
   }
 
-  const generated = op.result?.generatedVideos?.[0]?.video;
+  // Both SDK shapes seen in the wild: `response.generatedVideos` (newer)
+  // and `result.generatedVideos` (0.7.x). Try both.
+  const fromResponse = (
+    op.response as
+      | { generatedVideos?: { video?: { uri?: string; videoBytes?: string; mimeType?: string } }[] }
+      | undefined
+  )?.generatedVideos?.[0]?.video;
+  const generated = fromResponse ?? op.result?.generatedVideos?.[0]?.video;
   if (!generated) throw new Error("VEO_NO_OUTPUT");
 
   await fs.mkdir(path.dirname(outPath), { recursive: true });
@@ -79,7 +87,14 @@ export async function generateImage(
   const client = ai();
   const res = await client.models.generateContent({
     model: MODELS.image,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: `${prompt}\n\n[Render as a 16:9 landscape image.]` },
+        ],
+      },
+    ],
     config: {
       responseModalities: [Modality.IMAGE],
     },

@@ -18,7 +18,7 @@ Tasks (always both):
    - is empty / nonsense
    When rejecting, set rewritten="" and put a short student-friendly message in reason.
 
-2. REWRITE (only when allow=true): Rewrite the prompt to follow Veo / image best practices for the given medium. Include subject, action, scene, camera (for video), lighting, and style. Keep it under 60 words, preserve the user's original intent and any creative quirks. No real names, no copyrighted characters.
+2. REWRITE (only when allow=true): Rewrite the prompt to follow Veo / image best practices for the given medium. Include subject, action, scene, camera (for video), lighting, and style. Always frame for a 16:9 landscape composition — describe a wide, horizontal scene. Keep it under 60 words, preserve the user's original intent and any creative quirks. No real names, no copyrighted characters.
 
 Output strictly as JSON: { "allow": boolean, "reason": string, "rewritten": string }`;
 

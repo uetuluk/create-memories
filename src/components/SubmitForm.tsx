@@ -102,9 +102,18 @@ export default function SubmitForm({ initialMode }: { initialMode: Mode }) {
                 className="w-full rounded-xl"
               />
             )}
-            <a href="/" className="inline-block text-sm underline text-neutral-300">
-              View it on the gallery →
-            </a>
+            <div className="flex gap-3 items-center">
+              <a
+                href={`/api/media/${job.id}?download=1`}
+                download
+                className="rounded-lg bg-white text-black font-medium px-4 py-2 text-sm"
+              >
+                ⬇ Save {job.mode === "VIDEO" ? "video" : "image"}
+              </a>
+              <a href="/" className="text-sm underline text-neutral-300">
+                View on the gallery →
+              </a>
+            </div>
           </div>
         ) : job.status === "BLOCKED" ? (
           <div className="rounded-lg bg-amber-950/40 ring-1 ring-amber-800 p-4">
@@ -168,6 +177,11 @@ export default function SubmitForm({ initialMode }: { initialMode: Mode }) {
       {error === "already_queued" ? (
         <p className="text-sm text-amber-400">
           You already have a job in flight — watch its progress above.
+        </p>
+      ) : error === "user_limit_reached" ? (
+        <p className="text-sm text-amber-400">
+          You&apos;ve hit your 5-generation limit. Save your favorites and
+          enjoy the gallery!
         </p>
       ) : error ? (
         <p className="text-sm text-red-400">Error: {error}</p>
