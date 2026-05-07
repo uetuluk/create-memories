@@ -1,11 +1,11 @@
 import { Pool, PoolClient } from "pg";
 import path from "node:path";
 import { promises as fs } from "node:fs";
-import { prisma } from "@/lib/db";
-import { env } from "@/lib/env";
-import { reviewVibe } from "@/lib/prompt";
-import { generateVideo, generateImage, MODELS, type ImageRef } from "@/lib/genai";
-import { PRICING } from "@/lib/pricing";
+import { prisma } from "../lib/db";
+import { env } from "../lib/env";
+import { reviewVibe } from "../lib/prompt";
+import { generateVideo, generateImage, MODELS, type ImageRef } from "../lib/genai";
+import { PRICING } from "../lib/pricing";
 import {
   isLocationKey,
   isStyleKey,
@@ -15,9 +15,9 @@ import {
   styleRefPath,
   type LocationKey,
   type StyleKey,
-} from "@/lib/refs";
-import { buildQilinPrompt } from "@/lib/qilin";
-import { deletePortrait } from "@/lib/upload";
+} from "../lib/refs";
+import { buildQilinPrompt } from "../lib/qilin";
+import { deletePortrait } from "../lib/upload";
 
 const ADVISORY_LOCK_KEY = 731_001; // arbitrary fixed bigint
 const POLL_IDLE_MS = 2_000;

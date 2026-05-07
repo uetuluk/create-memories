@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { env } from "@/lib/env";
-import { imageCost, videoCost } from "@/lib/pricing";
+import { env } from "./env";
+import { imageCost, videoCost } from "./pricing";
 
 export const MODELS = {
   text: "gemini-3.1-flash-lite-preview",

@@ -9,7 +9,7 @@ import {
   STYLES,
   type StyleKey,
   pickRandomLocation,
-} from "@/lib/refs";
+} from "./refs";
 
 export type QilinJobInputs = {
   style: StyleKey;

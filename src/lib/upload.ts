@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import { env } from "@/lib/env";
+import { env } from "./env";
 
 export const SELFIE_MAX_BYTES = 5 * 1024 * 1024;
 export const SELFIE_MAX_EDGE = 1024;

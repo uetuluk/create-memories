@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { prisma } from "./db";
 
 export async function getQueuePosition(jobId: string): Promise<number> {
   const job = await prisma.job.findUnique({

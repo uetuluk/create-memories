@@ -1,8 +1,8 @@
 import NextAuth from "next-auth";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { prisma } from "@/lib/db";
-import { isEmailAllowed } from "@/lib/env";
+import { prisma } from "./db";
+import { isEmailAllowed } from "./env";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),

@@ -1,6 +1,6 @@
 import { Type } from "@google/genai";
-import { ai, MODELS } from "@/lib/genai";
-import { textCost } from "@/lib/pricing";
+import { ai, MODELS } from "./genai";
+import { textCost } from "./pricing";
 
 export type PromptUsage = {
   inputTokens: number;
