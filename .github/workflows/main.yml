@@ -41,6 +41,9 @@ jobs:
       - name: Copy docker-compose
         run: cp ./compose.production.yml deployment-config/compose.yml
 
+      - name: Copy deploy helpers (auto-redeploy script + systemd units)
+        run: cp -r ./deploy deployment-config/deploy
+
       - uses: actions/upload-artifact@v4
         with:
           name: config
