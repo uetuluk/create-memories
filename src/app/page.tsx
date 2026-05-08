@@ -27,7 +27,7 @@ export default async function HomePage() {
           Create Memories
         </h1>
         <p className="text-neutral-400 mt-2 text-lg">
-          NYU Shanghai · AI Committee × Library Relaxation Week
+          NYU Shanghai · Advisory AI Committee × Library Relaxation Week
         </p>
       </header>
 

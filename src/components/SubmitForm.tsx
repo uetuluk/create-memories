@@ -430,7 +430,7 @@ export default function SubmitForm({
             watermark.
           </li>
           <li>
-            Run by the NYU Shanghai AI Committee · Infrastructure & Tools
+            Run by the NYU Shanghai Advisory AI Committee · Infrastructure & Tools
             subcommittee. Email{" "}
             <a href="mailto:uet200@nyu.edu" className="underline">
               uet200@nyu.edu

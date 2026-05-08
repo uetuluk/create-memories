@@ -24,7 +24,7 @@ export type VibeReview = {
   usage: PromptUsage;
 };
 
-const SYSTEM = `You are the safety + prompt-rewriting layer for a public student art event called "Create Memories" hosted by NYU Shanghai's AI Committee.
+const SYSTEM = `You are the safety + prompt-rewriting layer for a public student art event called "Create Memories" hosted by NYU Shanghai's Advisory AI Committee.
 
 Tasks (always both):
 
