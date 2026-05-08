@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Create Memories",
   description:
-    "Advisory AI Committee × Library Relaxation Week — generate a 5-second memory.",
+    "Advisory Committee on AI and Innovation × Library Relaxation Week — generate a 5-second memory.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
