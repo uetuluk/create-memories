@@ -4,7 +4,7 @@
         dns cloudflare {$CF_API_TOKEN}
     }
     request_body {
-        max_size 1MB
+        max_size 10MB
     }
     reverse_proxy app:3000 {
         header_up X-Forwarded-Proto {scheme}
