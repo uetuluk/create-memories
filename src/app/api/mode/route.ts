@@ -21,6 +21,7 @@ export async function PUT(req: NextRequest) {
     mode?: "VIDEO" | "IMAGE" | "OFF";
     videoCap?: number;
     perUserQuota?: number;
+    requireLogin?: boolean;
   } = {};
 
   if (body?.mode !== undefined) {
@@ -37,6 +38,11 @@ export async function PUT(req: NextRequest) {
     if (typeof body.perUserQuota !== "number" || body.perUserQuota < 0)
       return NextResponse.json({ error: "bad_per_user_quota" }, { status: 400 });
     data.perUserQuota = Math.floor(body.perUserQuota);
+  }
+  if (body?.requireLogin !== undefined) {
+    if (typeof body.requireLogin !== "boolean")
+      return NextResponse.json({ error: "bad_require_login" }, { status: 400 });
+    data.requireLogin = body.requireLogin;
   }
 
   if (Object.keys(data).length === 0)

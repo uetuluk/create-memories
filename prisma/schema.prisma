@@ -77,8 +77,9 @@ enum QilinStyle {
 
 model Job {
   id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Null when login is disabled (anonymous kiosk submission).
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Free-text "vibe" the student typed (optional). Was the full prompt
   // pre-pivot; now it's an optional descriptor on top of style + location.
   prompt        String
@@ -117,6 +118,10 @@ model AppState {
   videoCount    Int      @default(0)
   videoCap      Int      @default(200)
   perUserQuota  Int      @default(10)
+  // When false, /submit and /api/jobs accept anonymous submissions and
+  // skip the per-user quota — only videoCap caps spend. Useful as a
+  // last-resort kiosk mode when magic-link friction kills usage.
+  requireLogin  Boolean  @default(true)
   totalCostUsd  Decimal  @default(0) @db.Decimal(8, 4)
   updatedAt     DateTime @updatedAt
 }

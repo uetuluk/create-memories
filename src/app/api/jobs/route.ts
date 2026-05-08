@@ -13,8 +13,19 @@ const MAX_VIBE = 200;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session?.user?.email || !isEmailAllowed(session.user.email)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const state = await getAppMode();
+
+  // When admin has disabled login, accept anonymous submissions. When
+  // login is required (default), enforce signed-in + allowed-domain.
+  let userId: string | null = null;
+  if (state.requireLogin) {
+    if (!session?.user?.email || !isEmailAllowed(session.user.email)) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    userId = session.user.id;
+  } else if (session?.user?.id && isEmailAllowed(session.user.email)) {
+    // If someone happens to be signed in, still attribute the job to them.
+    userId = session.user.id;
   }
 
   const ct = req.headers.get("content-type") ?? "";
@@ -44,33 +55,37 @@ export async function POST(req: NextRequest) {
   const photo = form.get("photo");
   const hasPhoto = photo instanceof File && photo.size > 0;
 
-  const state = await getAppMode();
   if (state.mode === "OFF") {
     return NextResponse.json({ error: "service_off" }, { status: 503 });
   }
 
-  const active = await prisma.job.findFirst({
-    where: { userId: session.user.id, status: { in: ["QUEUED", "RUNNING"] } },
-    select: { id: true },
-  });
-  if (active) {
-    return NextResponse.json(
-      { error: "already_queued", jobId: active.id },
-      { status: 409 },
-    );
-  }
+  // Per-user concurrency + quota only apply to authenticated users. When
+  // login is off, anonymous (userId=null) submissions are gated only by
+  // the global videoCap. Spam risk is intentional kiosk trade-off.
+  if (userId) {
+    const active = await prisma.job.findFirst({
+      where: { userId, status: { in: ["QUEUED", "RUNNING"] } },
+      select: { id: true },
+    });
+    if (active) {
+      return NextResponse.json(
+        { error: "already_queued", jobId: active.id },
+        { status: 409 },
+      );
+    }
 
-  const used = await prisma.job.count({
-    where: {
-      userId: session.user.id,
-      status: { in: ["QUEUED", "RUNNING", "COMPLETED"] },
-    },
-  });
-  if (used >= state.perUserQuota) {
-    return NextResponse.json(
-      { error: "user_limit_reached", limit: state.perUserQuota, used },
-      { status: 429 },
-    );
+    const used = await prisma.job.count({
+      where: {
+        userId,
+        status: { in: ["QUEUED", "RUNNING", "COMPLETED"] },
+      },
+    });
+    if (used >= state.perUserQuota) {
+      return NextResponse.json(
+        { error: "user_limit_reached", limit: state.perUserQuota, used },
+        { status: 429 },
+      );
+    }
   }
 
   // Save the selfie first (needs an id we can reuse on the Job row).
@@ -89,7 +104,7 @@ export async function POST(req: NextRequest) {
   try {
     const job = await prisma.job.create({
       data: {
-        userId: session.user.id,
+        userId,
         prompt: vibe,
         mode: state.mode,
         style,
@@ -109,13 +124,16 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
+  const state = await getAppMode();
   const id = req.nextUrl.searchParams.get("id");
 
-  // No `id` → return this user's own completed jobs (newest first) + quota.
+  // No `id` → "my memories" list. Only meaningful for signed-in users.
+  // Anonymous callers (login-off mode) get an empty list.
   if (!id) {
-    const [items, used, state] = await Promise.all([
+    if (!session?.user?.id) {
+      return NextResponse.json({ items: [], used: 0, limit: state.perUserQuota });
+    }
+    const [items, used] = await Promise.all([
       prisma.job.findMany({
         where: {
           userId: session.user.id,
@@ -139,7 +157,6 @@ export async function GET(req: NextRequest) {
           status: { in: ["QUEUED", "RUNNING", "COMPLETED"] },
         },
       }),
-      getAppMode(),
     ]);
     return NextResponse.json({ items, used, limit: state.perUserQuota });
   }
@@ -160,8 +177,13 @@ export async function GET(req: NextRequest) {
     },
   });
   if (!job) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  if (job.userId !== session.user.id)
+
+  // Owner-only when the job has an owner. Anonymous (login-off) jobs are
+  // pollable by anyone holding the id — fine for a kiosk; the id is a
+  // cuid that the submitter just got back from POST.
+  if (job.userId && job.userId !== session?.user?.id) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const position = await getQueuePosition(job.id);
   return NextResponse.json({ ...job, position });

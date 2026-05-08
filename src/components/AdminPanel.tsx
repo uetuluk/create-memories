@@ -7,6 +7,7 @@ type AppState = {
   videoCount: number;
   videoCap: number;
   perUserQuota: number;
+  requireLogin: boolean;
   totalCostUsd: string;
 };
 type AdminJob = {
@@ -20,7 +21,7 @@ type AdminJob = {
   errorMsg: string | null;
   createdAt: string;
   completedAt: string | null;
-  user: { email: string | null };
+  user: { email: string | null } | null;
 };
 type UsageBucket = {
   kind: "TEXT" | "IMAGE" | "VIDEO";
@@ -80,7 +81,9 @@ export default function AdminPanel() {
     refresh();
   }
 
-  async function patchState(body: Partial<{ videoCap: number; perUserQuota: number }>) {
+  async function patchState(
+    body: Partial<{ videoCap: number; perUserQuota: number; requireLogin: boolean }>,
+  ) {
     await fetch("/api/mode", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -125,6 +128,27 @@ export default function AdminPanel() {
                   Set {m}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-sm text-neutral-400">Login requirement</div>
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={() => patchState({ requireLogin: !state.requireLogin })}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ${
+                  state.requireLogin
+                    ? "bg-emerald-900/40 text-emerald-100 ring-emerald-700"
+                    : "bg-amber-900/40 text-amber-100 ring-amber-700"
+                }`}
+              >
+                {state.requireLogin ? "Login required" : "Kiosk (no login)"}
+              </button>
+              <span className="text-xs text-neutral-500">
+                {state.requireLogin
+                  ? "/submit redirects to magic-link sign-in."
+                  : "Anyone with the QR can submit. Per-user quota disabled — only video cap stops spend."}
+              </span>
             </div>
           </div>
 
@@ -255,7 +279,7 @@ export default function AdminPanel() {
                 <div className="flex-1 min-w-0">
                   <div className="flex gap-2 items-center flex-wrap">
                     <span className="text-xs text-neutral-500 truncate max-w-full">
-                      {j.user.email}
+                      {j.user?.email ?? "anonymous"}
                     </span>
                     <span className="text-xs px-1.5 rounded bg-neutral-800">
                       {j.mode}
