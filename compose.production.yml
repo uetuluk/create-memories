@@ -34,6 +34,11 @@ services:
     restart: always
     env_file: .env
     environment:
+      # Next.js standalone honors HOSTNAME for the bind address. Without
+      # this, next-server resolves the container's hostname and binds to
+      # only one of the two attached networks (non-deterministic across
+      # recreates), which strands Caddy on the other network with 502s.
+      HOSTNAME: 0.0.0.0
       MEDIA_DIR: /data/media
       SURVEY_URL: ${SURVEY_URL:-}
     command: [ "node", "server.js" ]
@@ -53,6 +58,10 @@ services:
     restart: always
     env_file: .env
     environment:
+      # Worker doesn't expose HTTP, but the standalone runtime checks
+      # HOSTNAME at boot regardless. Set it to match the app for
+      # consistency / future-proofing if a health endpoint is added.
+      HOSTNAME: 0.0.0.0
       MEDIA_DIR: /data/media
     command: [ "node", "dist-worker/worker/index.js" ]
     volumes:
