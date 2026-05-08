@@ -130,3 +130,7 @@ For local magic-link testing without a real SMTP relay, point `EMAIL_SERVER` at 
 - **Crash recovery:** on startup the worker reaps any `RUNNING` jobs older than 10 minutes to `FAILED`.
 - **Storage:** all generated assets live on the `media` named Docker volume (`/data/media` inside the container). Expect ≈ 1 GB max for the event.
 - **Networks:** `internal` (no internet) holds db; `external` holds caddy + smtp-relay + app + worker. Postgres is unreachable from the public web by design.
+
+## License
+
+[AGPL-3.0](./LICENSE). If you run a modified version of this on a public-facing server, you must offer the source of your modifications to its users.
