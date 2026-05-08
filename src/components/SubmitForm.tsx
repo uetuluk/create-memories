@@ -96,11 +96,33 @@ export default function SubmitForm({
     setSubmitting(true);
     try {
       const fd = new FormData(e.currentTarget);
-      const res = await fetch("/api/jobs", { method: "POST", body: fd });
-      const data = await res.json();
+      let res: Response;
+      try {
+        res = await fetch("/api/jobs", { method: "POST", body: fd });
+      } catch {
+        // Network error / connection reset (e.g. proxy aborted a too-large body).
+        setError("network_error");
+        return;
+      }
+      // Some failure modes (Caddy 413, gateway errors) return non-JSON.
+      // Try JSON first, fall back to a status-based code so the UI still
+      // shows a useful message instead of swallowing the click.
+      let data: { error?: string; id?: string; jobId?: string; mode?: Mode } | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
       if (!res.ok) {
-        setError(data.error ?? "submit_failed");
-        if (data.error === "already_queued" && data.jobId) setJobId(data.jobId);
+        const code =
+          data?.error ??
+          (res.status === 413 ? "upload_too_large" : `http_${res.status}`);
+        setError(code);
+        if (data?.error === "already_queued" && data.jobId) setJobId(data.jobId);
+        return;
+      }
+      if (!data?.id) {
+        setError("submit_failed");
         return;
       }
       setJobId(data.id);
@@ -347,6 +369,15 @@ export default function SubmitForm({
       ) : error === "UPLOAD_DECODE_FAILED" || error === "UPLOAD_UNSUPPORTED_TYPE" ? (
         <p className="text-sm text-amber-400">
           We couldn&apos;t read that photo. Try a JPG or PNG.
+        </p>
+      ) : error === "upload_too_large" ? (
+        <p className="text-sm text-amber-400">
+          That photo is too big. Try a smaller one (under 10 MB) or skip the
+          photo.
+        </p>
+      ) : error === "network_error" ? (
+        <p className="text-sm text-amber-400">
+          Network hiccup. Check your connection and try again.
         </p>
       ) : error ? (
         <p className="text-sm text-red-400">Error: {error}</p>

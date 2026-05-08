@@ -16,9 +16,13 @@ const ACCEPTED_EXT_TO_MIME: Record<string, string> = {
 };
 
 function uploadsDir(): string {
-  // Sibling of MEDIA_DIR; on the deployed compose stack both live on
-  // /data, on the same named volume.
-  return path.resolve(env.mediaDir(), "..", "uploads");
+  // Selfies must live on a path the worker container can also see. The
+  // shared volume in production is mounted at MEDIA_DIR (/data/media),
+  // not at its parent — so a sibling 'uploads' directory ends up on the
+  // container's writable layer and the worker 404s with ENOENT.
+  // Co-locate selfies under MEDIA_DIR with an underscore prefix so the
+  // gallery's media-id lookups (cuid filenames) never collide.
+  return path.join(env.mediaDir(), "_uploads");
 }
 
 export type SavedSelfie = {
