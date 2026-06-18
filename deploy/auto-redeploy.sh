@@ -87,18 +87,42 @@ fi
 git pull --ff-only --quiet 2>>"$LOG_FILE" \
   || fail "[create-memories] redeploy: git pull failed (non-FF or conflict?)"
 
-# 'docker compose pull' returns 0 even when nothing changed. We capture
-# its output so we can decide whether to call 'up -d'.
+# Detect a stale container by comparing the image each running container
+# uses against the image the service's tag currently resolves to locally
+# (after pull). Compose's "Pulled" / "up to date" log lines proved
+# unreliable: the regex used previously missed real updates AND would
+# have fired 'up -d' on every tick if it had matched.
 log "docker compose pull"
-pull_out=$($COMPOSE_BIN pull 2>&1)
-echo "$pull_out" | tee -a "$LOG_FILE" >/dev/null
+$COMPOSE_BIN pull 2>&1 | tee -a "$LOG_FILE" >/dev/null \
+  || fail "[create-memories] redeploy: docker compose pull failed"
 
-# Detect "newer image was downloaded": presence of 'Pulled' or 'Downloaded'.
 needs_up=0
 if [[ "$current" != "$remote" ]]; then
   needs_up=1   # config/compose changed
-elif echo "$pull_out" | grep -qE '^[[:space:]]*[A-Za-z0-9_-]+ Pulled|Downloaded newer image'; then
-  needs_up=1
+else
+  # `compose config --images` lists the image refs each service uses.
+  # For each one, compare the local resolved digest against the digest
+  # the running container is using.
+  while read -r image_ref; do
+    [[ -z "$image_ref" ]] && continue
+    target_img=$(docker image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null || echo "")
+    [[ -z "$target_img" ]] && continue   # nothing to compare against
+    # Find any running container using this image_ref where the actual
+    # image ID differs from target_img.
+    stale=$(docker ps --filter "ancestor=$image_ref" --format '{{.ID}}' \
+      | while read -r cid; do
+          running_img=$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || echo "")
+          if [[ -n "$running_img" && "$running_img" != "$target_img" ]]; then
+            echo "$cid"
+            break
+          fi
+        done)
+    if [[ -n "$stale" ]]; then
+      log "stale container $stale on $image_ref"
+      needs_up=1
+      break
+    fi
+  done < <($COMPOSE_BIN config --images 2>/dev/null | sort -u)
 fi
 
 if [[ "$needs_up" -eq 0 ]]; then
